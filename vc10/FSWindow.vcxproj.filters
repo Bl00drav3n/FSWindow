@@ -11,7 +11,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\src\fswindow.cpp">
+    <ClCompile Include="..\src\fswindow.cpp">
       <Filter>Sources</Filter>
     </ClCompile>
   </ItemGroup>
