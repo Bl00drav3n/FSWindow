@@ -7,11 +7,26 @@
 
 #define PRINT_ERR(x) OutputDebugStringA((x))
 #define WINDOW_CLASS_NAME "FSWindowClass"
+#define ENUM_ERR_ABORTED 0x20000000
+#define MAX_WND_ENUM_COUNT 512
 
 struct window_data
 {
 	DWORD Style;
 	HWND Window;
+};
+
+struct window_data_pool
+{
+	DWORD DataCount;
+	DWORD MaxDataCount;
+	window_data *Data;
+};
+
+struct enum_data
+{
+	HWND ComboBox;
+	window_data_pool *Pool;
 };
 
 struct wnd_ctrls
@@ -21,8 +36,37 @@ struct wnd_ctrls
 	HWND ButtonOK;
 	HWND ButtonCancel;
 
+	window_data_pool Pool;
 	window_data *CurSelection;
-} Controls = {};
+};
+
+static wnd_ctrls Controls;
+
+static void
+AllocateWindowDataPool(window_data_pool *Pool, DWORD MaxCount)
+{
+	if(Pool) {
+		if(Pool->Data && MaxCount != Pool->MaxDataCount) {
+			VirtualFree(Pool->Data, 0, MEM_RELEASE);
+		}
+
+		DWORD MemSize = MaxCount * sizeof(window_data);
+		Pool->Data = (window_data*)VirtualAlloc(0, MemSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+		Pool->DataCount = 0;
+		Pool->MaxDataCount = MaxCount;
+	}
+}
+
+static window_data *
+PushWindowData(window_data_pool *Pool)
+{
+	window_data *Result = 0;
+	if(Pool->DataCount < Pool->MaxDataCount) {
+		Result = Pool->Data + Pool->DataCount++;
+	}
+
+	return Result;
+}
 
 static void
 SetFullscreen(window_data Data)
@@ -56,23 +100,13 @@ SetFullscreen(window_data Data)
 	}
 }
 
-static window_data *
-CreateWindowData(HWND Window, DWORD Style)
-{
-	// TODO: Bleh
-	window_data *Result = (window_data *)malloc(sizeof(*Result));
-	if(Result) {
-		Result->Style = Style;
-		Result->Window = Window;
-	}
-
-	return Result;
-}
-
 static BOOL CALLBACK 
 EnumWindowsProc(HWND Window, LPARAM lParam)
 {
-	HWND ComboBox = (HWND)lParam;
+	BOOL Result = TRUE;
+	enum_data *EnumData = (enum_data*)lParam;
+	window_data_pool *Pool = EnumData->Pool;
+	HWND ComboBox = EnumData->ComboBox;
 	if(!GetParent(Window)) {
 		LONG_PTR Style = GetWindowLongPtrA(Window, GWL_STYLE);
 		if(Style & WS_VISIBLE) {
@@ -80,9 +114,18 @@ EnumWindowsProc(HWND Window, LPARAM lParam)
 			if(TextLength > 0) {
 				char Buffer[256];
 				if(GetWindowTextA(Window, Buffer, sizeof(Buffer))) {
-					DWORD Pos = (DWORD)SendMessageA(ComboBox, CB_ADDSTRING, 0, (LPARAM)Buffer);
-					window_data *WndData = CreateWindowData(Window, Style);
-					SendMessageA(ComboBox, CB_SETITEMDATA, Pos, (LPARAM)WndData);
+					window_data *WndData = PushWindowData(Pool);
+					if(WndData) {
+						WndData->Style = Style;
+						WndData->Window = Window;
+						DWORD Pos = (DWORD)SendMessageA(ComboBox, CB_ADDSTRING, 0, (LPARAM)Buffer);
+						SendMessageA(ComboBox, CB_SETITEMDATA, Pos, (LPARAM)WndData);
+					}
+					else {
+						PRINT_ERR("Maximum window count reached.\n");
+						SetLastError(ENUM_ERR_ABORTED);
+						return FALSE;
+					}
 				}
 				else {
 					PRINT_ERR("Could not get window title.\n");
@@ -94,7 +137,7 @@ EnumWindowsProc(HWND Window, LPARAM lParam)
 		}
 	}
 
-	return TRUE;
+	return Result;
 }
 
 static void
@@ -122,7 +165,7 @@ InitWindowComponents(HWND MainWindow, wnd_ctrls *Controls)
 	HWND TextBox = CreateWindowA(
 		WC_STATICA,
 		0,
-		WS_CHILD | WS_VISIBLE | WS_OVERLAPPED | SS_LEFT,
+		WS_CHILD | WS_VISIBLE | WS_OVERLAPPED | SS_CENTER,
 		UpperLeftX, UpperLeftY,
 		FrameWidth, 20,
 		MainWindow,
@@ -157,11 +200,23 @@ InitWindowComponents(HWND MainWindow, wnd_ctrls *Controls)
 		Module, 
 		0);
 
-	if(!EnumWindows(EnumWindowsProc, (LPARAM)ComboBox)) {
-		PRINT_ERR("Could not enumerate windows.\n");
+	AllocateWindowDataPool(&Controls->Pool, MAX_WND_ENUM_COUNT);
+	enum_data EnumData = {};
+	EnumData.ComboBox = ComboBox;
+	EnumData.Pool = &Controls->Pool;
+	if(!EnumWindows(EnumWindowsProc, (LPARAM)&EnumData)) {
+		if(GetLastError() != ENUM_ERR_ABORTED) {
+			PRINT_ERR("Could not enumerate windows.\n");
+		}
 	}
 
-	SetFocus(ComboBox);
+	if(Controls->Pool.DataCount > 0) {
+		SetFocus(ComboBox);
+	}
+	else {
+		SetWindowText(TextBox, "No windows found.");
+		SetFocus(ButtonOK);
+	}
 
 	Controls->ComboBox = ComboBox;
 	Controls->StaticText = TextBox;
@@ -199,7 +254,7 @@ MainWindowProc(HWND MainWindow, UINT Message, WPARAM wParam, LPARAM lParam)
 
 						// TODO: Display usefull data
 						char Buffer[256];
-						StringCbPrintfA(Buffer, sizeof(Buffer), "%dx%d", Width, Height);
+						StringCbPrintfA(Buffer, sizeof(Buffer), "%dx%d starting at (%d,%d)", Width, Height, Rect.left, Rect.top);
 						SetWindowTextA(Controls.StaticText, Buffer);
 					}
 					else {
