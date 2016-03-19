@@ -10,6 +10,17 @@
 #define ENUM_ERR_ABORTED 0x20000000
 #define MAX_WND_ENUM_COUNT 512
 
+#define MAIN_WINDOW_WIDTH 400
+#define MAIN_WINDOW_HEIGHT 150
+
+// NOTE: Layout specification
+#define MARGIN_X 20
+#define MARGIN_Y 8
+#define SPACING_X 20
+#define SPACING_Y 20
+#define NUM_ELEMENTS_X 2
+#define NUM_ELEMENTS_Y 3
+
 struct window_data
 {
 	DWORD Style;
@@ -141,64 +152,128 @@ EnumWindowsProc(HWND Window, LPARAM lParam)
 }
 
 static void
+ApplySystemParameters(wnd_ctrls *Controls)
+{
+	if(Controls) {
+		NONCLIENTMETRICS Metrics = {};
+		Metrics.cbSize = sizeof(Metrics);
+
+		SystemParametersInfoA(SPI_GETNONCLIENTMETRICS, sizeof(Metrics), &Metrics, 0);
+
+		HFONT Font = CreateFontIndirectA(&Metrics.lfMessageFont);
+		SendMessageA(Controls->ButtonCancel, WM_SETFONT, (WPARAM)Font, 0);
+		SendMessageA(Controls->ButtonOK, WM_SETFONT, (WPARAM)Font, 0);
+		SendMessageA(Controls->ComboBox, WM_SETFONT, (WPARAM)Font, 0);
+		SendMessageA(Controls->StaticText, WM_SETFONT, (WPARAM)Font, 0);
+	}
+}
+
+struct wnd_dim
+{
+	int Width;
+	int Height;
+};
+static inline wnd_dim
+GetWindowDimensions(HWND Window)
+{
+	wnd_dim Result = {};
+
+	RECT Rect;
+	if(GetClientRect(Window, &Rect)) {
+		Result.Width = Rect.right - Rect.left;
+		Result.Height = Rect.bottom - Rect.top;
+	}
+
+	return Result;
+}
+
+static void
+ApplyGridLayout(wnd_ctrls *Controls, int WindowWidth, int WindowHeight, int MarginX, int MarginY)
+{
+	if(Controls) {
+		// NOTE: Build a nice grid layout
+		float GridSpacingX = (float)WindowWidth / (float)NUM_ELEMENTS_X;
+		float GridSpacingY = (float)WindowHeight / (float)NUM_ELEMENTS_Y;
+
+		wnd_dim Dim;
+		UINT SetPosFlags = SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOZORDER | SWP_SHOWWINDOW;
+
+		Dim = GetWindowDimensions(Controls->ComboBox);
+		SetWindowPos(Controls->ComboBox, 0, MarginX, (int)((GridSpacingY - Dim.Height) / 2), MAIN_WINDOW_WIDTH - 2 * MarginX, MAIN_WINDOW_HEIGHT, SetPosFlags);
+
+		// NOTE: CW_USEDEFAULT does not work for some reason. Thanks Microsoft.
+		// TODO: To support different fonts this has to figure out how big the actual button really should be.
+		int TextBoxWidth = (int)(WindowWidth - 2 * MarginX);
+		int TextBoxHeight = (int)(GridSpacingY - 2 * MarginY);
+		int TextY = (int)(GridSpacingY + MarginY);
+		SetWindowPos(Controls->StaticText, 0, MarginX, TextY, TextBoxWidth, TextBoxHeight, SetPosFlags);
+
+		int ButtonWidth = (int)(GridSpacingX - 2 * MarginX);
+		int ButtonHeight = (int)(GridSpacingY - 2 * MarginY);
+		int ButtonOffsetX = MarginX;
+		int ButtonY = (int)(2 * GridSpacingY + MarginY);
+		SetWindowPos(Controls->ButtonOK, 0, ButtonOffsetX, ButtonY, ButtonWidth, ButtonHeight, SetPosFlags);
+		SetWindowPos(Controls->ButtonCancel, 0, (int)(GridSpacingX + ButtonOffsetX), ButtonY, ButtonWidth, ButtonHeight, SetPosFlags);
+	}
+}
+
+static void
 InitWindowComponents(HWND MainWindow, wnd_ctrls *Controls)
 {
-	int UpperLeftX = 20;
-	int UpperLeftY = 10;
-	int DiffY = 30;
-	int FrameWidth = 340;
-
 	HINSTANCE Module = GetModuleHandle(0);
-	HWND ComboBox = CreateWindowA(
+
+	HWND ComboBox, TextBox, ButtonOK, ButtonCancel;
+	ComboBox = CreateWindowA(
 		WC_COMBOBOXA, 
 		0, 
-		WS_CHILD | WS_VISIBLE | WS_OVERLAPPED | WS_VSCROLL | CBS_DROPDOWNLIST | CBS_SORT,
-		UpperLeftX, UpperLeftY,
-		FrameWidth, 200, 
+		WS_CHILD | WS_OVERLAPPED | WS_VSCROLL | CBS_DROPDOWNLIST | CBS_SORT,
+		0, 0,
+		CW_USEDEFAULT, CW_USEDEFAULT,
 		MainWindow,
 		0, 
 		Module,
 		0);
 
-	UpperLeftY += DiffY;
-
-	HWND TextBox = CreateWindowA(
+	TextBox = CreateWindowA(
 		WC_STATICA,
-		0,
-		WS_CHILD | WS_VISIBLE | WS_OVERLAPPED | SS_CENTER,
-		UpperLeftX, UpperLeftY,
-		FrameWidth, 20,
+		"Please choose a window from the list above.",
+		WS_CHILD | WS_OVERLAPPED | SS_CENTER | SS_CENTERIMAGE,
+		0, 0,
+		CW_USEDEFAULT, CW_USEDEFAULT,
 		MainWindow,
 		0,
 		Module,
 		0);
 
-	UpperLeftY += 3 * DiffY / 2;
-
-	int ButtonWidth = 150;
-	int ButtonX = FrameWidth - 2 * ButtonWidth;
-	int ButtonMargin = 5;
-	HWND ButtonOK = CreateWindowA(
-		WC_BUTTONA,
-		"OK",
-		WS_TABSTOP | WS_CHILD | WS_VISIBLE | WS_OVERLAPPED | BS_DEFPUSHBUTTON,
-		ButtonX - ButtonMargin, UpperLeftY,
-		ButtonWidth, 30,
-		MainWindow,
-		0, 
-		Module, 
-		0);
-
-	HWND ButtonCancel = CreateWindowA(
+	ButtonCancel = CreateWindowA(
 		WC_BUTTONA,
 		"Cancel",
-		WS_TABSTOP | WS_CHILD | WS_VISIBLE | WS_OVERLAPPED | BS_DEFPUSHBUTTON,
-		ButtonX + ButtonWidth + ButtonMargin, UpperLeftY,
-		ButtonWidth, 30,
+		WS_TABSTOP | WS_CHILD | WS_OVERLAPPED | BS_DEFPUSHBUTTON,
+		0, 0,
+		CW_USEDEFAULT, CW_USEDEFAULT,
 		MainWindow,
 		0, 
 		Module, 
 		0);
+
+	ButtonOK = CreateWindowA(
+		WC_BUTTONA,
+		"Set to fullscreen",
+		WS_TABSTOP | WS_CHILD | WS_OVERLAPPED | BS_DEFPUSHBUTTON,
+		0, 0,
+		CW_USEDEFAULT, CW_USEDEFAULT,
+		MainWindow,
+		0, 
+		Module, 
+		0);
+
+	Controls->ComboBox = ComboBox;
+	Controls->StaticText = TextBox;
+	Controls->ButtonOK = ButtonOK;
+	Controls->ButtonCancel = ButtonCancel;
+	Controls->CurSelection = 0;
+
+	ApplySystemParameters(Controls);
 
 	AllocateWindowDataPool(&Controls->Pool, MAX_WND_ENUM_COUNT);
 	enum_data EnumData = {};
@@ -218,11 +293,44 @@ InitWindowComponents(HWND MainWindow, wnd_ctrls *Controls)
 		SetFocus(ButtonOK);
 	}
 
-	Controls->ComboBox = ComboBox;
-	Controls->StaticText = TextBox;
-	Controls->ButtonOK = ButtonOK;
-	Controls->ButtonCancel = ButtonCancel;
-	Controls->CurSelection = 0;
+	ApplyGridLayout(Controls, MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT, MARGIN_X, MARGIN_Y);
+}
+
+static void 
+DrawGradient(HDC hDC, RECT Region, COLORREF TopLeft, COLORREF TopRight, COLORREF BottomLeft, COLORREF BottomRight)
+{
+	GRADIENT_TRIANGLE GradientTriangle[2] = { {0, 1, 2}, {2, 0, 3} };
+    TRIVERTEX Vertices[4] = {
+        Region.left,
+        Region.top,
+        GetRValue(TopLeft) << 8,
+        GetGValue(TopLeft) << 8,
+        GetBValue(TopLeft) << 8,
+        0x0000,
+
+		Region.left,
+		Region.bottom,
+        GetRValue(BottomLeft) << 8,
+        GetGValue(BottomLeft) << 8,
+        GetBValue(BottomLeft) << 8,
+        0x0000,
+
+        Region.right,
+        Region.bottom,
+        GetRValue(BottomRight) << 8,
+        GetGValue(BottomRight) << 8,
+        GetBValue(BottomRight) << 8,
+        0x0000,
+
+		Region.right,
+        Region.top,
+        GetRValue(TopRight) << 8,
+        GetGValue(TopRight) << 8,
+        GetBValue(TopRight) << 8,
+        0x0000
+    };
+
+    GradientFill(hDC, Vertices, 4, &GradientTriangle, 2, GRADIENT_FILL_TRIANGLE);
 }
 
 static LRESULT CALLBACK 
@@ -236,6 +344,22 @@ MainWindowProc(HWND MainWindow, UINT Message, WPARAM wParam, LPARAM lParam)
 		case WM_DESTROY:
 			PostQuitMessage(0);
 			break;
+		case WM_ERASEBKGND:
+			// NOTE: Return a non-zero value. Literally.
+			Result = !0;
+			break;
+		case WM_PAINT:
+		{
+			PAINTSTRUCT PaintStruct;
+			HDC DC = BeginPaint(MainWindow, &PaintStruct);
+			RECT FillRegion;
+			GetClientRect(MainWindow, &FillRegion);
+			COLORREF Top = RGB(239, 241, 245);
+			COLORREF Bottom = RGB(218, 223, 233);
+			DrawGradient(DC, FillRegion, Top, Top, Bottom, Bottom);
+			EndPaint(MainWindow, &PaintStruct);
+			ReleaseDC(MainWindow, DC);
+		} break;
 		case WM_COMMAND:
 		{
 			HWND Ctrl = (HWND)lParam;
@@ -256,6 +380,7 @@ MainWindowProc(HWND MainWindow, UINT Message, WPARAM wParam, LPARAM lParam)
 						char Buffer[256];
 						StringCbPrintfA(Buffer, sizeof(Buffer), "%dx%d starting at (%d,%d)", Width, Height, Rect.left, Rect.top);
 						SetWindowTextA(Controls.StaticText, Buffer);
+						ShowWindow(Controls.StaticText, TRUE);
 					}
 					else {
 						PRINT_ERR("Could not get window info.\n");
@@ -292,20 +417,30 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
 	WindowClass.hInstance = Module;
 	WindowClass.hIcon = LoadIcon(0, IDI_APPLICATION);
 	WindowClass.hCursor = LoadCursorA(0, IDC_ARROW);
-	WindowClass.hbrBackground = (HBRUSH)(COLOR_WINDOW+1);
 	WindowClass.lpszClassName = WINDOW_CLASS_NAME;
 	RegisterClassExA(&WindowClass);
 
+	DWORD WindowExStyle = WS_EX_APPWINDOW;
+	DWORD WindowStyle = WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_OVERLAPPEDWINDOW & ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
 	HWND MainWindow = CreateWindowEx(
-		WS_EX_APPWINDOW,
+		WindowExStyle,
 		WINDOW_CLASS_NAME,
 		"FSWindow",
-		WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-		0, 0,
-		400, 180,
+		WindowStyle,
+		CW_USEDEFAULT, CW_USEDEFAULT,
+		CW_USEDEFAULT, CW_USEDEFAULT,
 		0, 0,
 		Module,
 		0);
+
+	RECT AdjustRect = {};
+	AdjustRect.right = MAIN_WINDOW_WIDTH;
+	AdjustRect.bottom = MAIN_WINDOW_HEIGHT;
+	AdjustWindowRectEx(&AdjustRect, WindowStyle, FALSE, WindowExStyle);
+	SetWindowPos(MainWindow, 0, 
+		0, 0, 
+		AdjustRect.right - AdjustRect.left, AdjustRect.bottom - AdjustRect.top, 
+		SWP_NOMOVE | SWP_NOCOPYBITS | SWP_SHOWWINDOW);
 
 	BOOL Running = TRUE;
 	while(Running) {
