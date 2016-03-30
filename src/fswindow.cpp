@@ -5,12 +5,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define FORCED_WINDOW_WIDTH 1280
+#define FORCED_WINDOW_HEIGHT 720
+
 #define PRINT_ERR(x) OutputDebugStringA((x))
 #define WINDOW_CLASS_NAME "FSWindowClass"
 #define ENUM_ERR_ABORTED 0x20000000
 #define MAX_WND_ENUM_COUNT 512
 
-#define MAIN_WINDOW_WIDTH 400
+#define MAIN_WINDOW_WIDTH 450
 #define MAIN_WINDOW_HEIGHT 150
 
 // NOTE: Layout specification
@@ -18,7 +21,7 @@
 #define MARGIN_Y 8
 #define SPACING_X 20
 #define SPACING_Y 20
-#define NUM_ELEMENTS_X 2
+#define NUM_ELEMENTS_X 3
 #define NUM_ELEMENTS_Y 3
 
 struct window_data
@@ -46,6 +49,7 @@ struct wnd_ctrls
 	HWND StaticText;
 	HWND ButtonOK;
 	HWND ButtonCancel;
+	HWND CheckBox;
 
 	window_data_pool Pool;
 	window_data *CurSelection;
@@ -80,7 +84,7 @@ PushWindowData(window_data_pool *Pool)
 }
 
 static void
-SetFullscreen(window_data Data)
+SetBorderlessWindowStyle(window_data Data)
 {
 	HWND Window = Data.Window;
 	DWORD Style = Data.Style;
@@ -88,27 +92,65 @@ SetFullscreen(window_data Data)
 	if(ExStyle) {
 		SetWindowLong(Window, GWL_STYLE, Style & ~(WS_CAPTION | WS_THICKFRAME));
 		SetWindowLong(Window, GWL_EXSTYLE, ExStyle & ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
-
-		MONITORINFO MonitorInfo = {};
-		MonitorInfo.cbSize = sizeof(MonitorInfo);
-		if(GetMonitorInfo(MonitorFromWindow(Window, MONITOR_DEFAULTTONEAREST), &MonitorInfo)) {
-			RECT Rect = MonitorInfo.rcMonitor;
-			int X = Rect.left;
-			int Y = Rect.top;
-			int Width = Rect.right - Rect.left;
-			int Height = Rect.bottom - Rect.top;
-			UINT Flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED;
-			if(!SetWindowPos(Window, 0, X, Y, Width, Height, Flags)) {
-				PRINT_ERR("Call to SetWindowPos failed.\n");
-			}
-		}
-		else {
-			PRINT_ERR("Could not get monitor info.\n");
-		}
 	}
 	else {
 		PRINT_ERR("Could not get extended style info.\n");
 	}
+}
+
+static void
+SetWindowDimensions(window_data Data, int UpperLeftX, int UpperLeftY, int Width, int Height)
+{
+	UINT Flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED;
+	if(!SetWindowPos(Data.Window, 0, UpperLeftX, UpperLeftY, Width, Height, Flags)) {
+		PRINT_ERR("Call to SetWindowPos failed.\n");
+	}
+}
+
+static void
+SetWindowMode(window_data Data, int Width, int Height)
+{
+	MONITORINFO MonitorInfo = {};
+	MonitorInfo.cbSize = sizeof(MonitorInfo);
+	if(GetMonitorInfo(MonitorFromWindow(Data.Window, MONITOR_DEFAULTTONEAREST), &MonitorInfo)) {
+		RECT Rect = MonitorInfo.rcMonitor;
+		int MonitorWidth = Rect.right - Rect.left;
+		int MonitorHeight = Rect.bottom - Rect.top;
+		int X = Rect.left;
+		int Y = Rect.top;
+		if(MonitorWidth > Width) {
+			X = (MonitorWidth - Width) / 2;
+		}
+		if(MonitorHeight > Height) {
+			Y = (MonitorHeight - Height) / 2;
+		}
+		SetWindowDimensions(Data, X, Y, Width, Height);
+	}
+	else {
+		PRINT_ERR("Could not get monitor info.\n");
+	}
+
+	SetBorderlessWindowStyle(Data);
+}
+
+static void
+SetFullscreen(window_data Data)
+{
+	MONITORINFO MonitorInfo = {};
+	MonitorInfo.cbSize = sizeof(MonitorInfo);
+	if(GetMonitorInfo(MonitorFromWindow(Data.Window, MONITOR_DEFAULTTONEAREST), &MonitorInfo)) {
+		RECT Rect = MonitorInfo.rcMonitor;
+		int X = Rect.left;
+		int Y = Rect.top;
+		int Width = Rect.right - Rect.left;
+		int Height = Rect.bottom - Rect.top;
+		SetWindowDimensions(Data, X, Y, Width, Height);
+	}
+	else {
+		PRINT_ERR("Could not get monitor info.\n");
+	}
+
+	SetBorderlessWindowStyle(Data);
 }
 
 static BOOL CALLBACK 
@@ -165,6 +207,7 @@ ApplySystemParameters(wnd_ctrls *Controls)
 		SendMessageA(Controls->ButtonOK, WM_SETFONT, (WPARAM)Font, 0);
 		SendMessageA(Controls->ComboBox, WM_SETFONT, (WPARAM)Font, 0);
 		SendMessageA(Controls->StaticText, WM_SETFONT, (WPARAM)Font, 0);
+		SendMessageA(Controls->CheckBox, WM_SETFONT, (WPARAM)Font, 0);
 	}
 }
 
@@ -192,6 +235,9 @@ ApplyGridLayout(wnd_ctrls *Controls, int WindowWidth, int WindowHeight, int Marg
 {
 	if(Controls) {
 		// NOTE: Build a nice grid layout
+		
+		// TODO: We might want to consider to formalize the notion of a layout if we are going to
+		// add more controls to the window.
 		float GridSpacingX = (float)WindowWidth / (float)NUM_ELEMENTS_X;
 		float GridSpacingY = (float)WindowHeight / (float)NUM_ELEMENTS_Y;
 
@@ -214,6 +260,9 @@ ApplyGridLayout(wnd_ctrls *Controls, int WindowWidth, int WindowHeight, int Marg
 		int ButtonY = (int)(2 * GridSpacingY + MarginY);
 		SetWindowPos(Controls->ButtonOK, 0, ButtonOffsetX, ButtonY, ButtonWidth, ButtonHeight, SetPosFlags);
 		SetWindowPos(Controls->ButtonCancel, 0, (int)(GridSpacingX + ButtonOffsetX), ButtonY, ButtonWidth, ButtonHeight, SetPosFlags);
+
+		// TODO: This is pure hackery.
+		SetWindowPos(Controls->CheckBox, 0, (int)(2 * GridSpacingX + ButtonOffsetX), ButtonY, ButtonWidth, ButtonHeight, SetPosFlags);
 	}
 }
 
@@ -222,7 +271,7 @@ InitWindowComponents(HWND MainWindow, wnd_ctrls *Controls)
 {
 	HINSTANCE Module = GetModuleHandle(0);
 
-	HWND ComboBox, TextBox, ButtonOK, ButtonCancel;
+	HWND ComboBox, TextBox, ButtonOK, ButtonCancel, CheckBox;
 	ComboBox = CreateWindowA(
 		WC_COMBOBOXA, 
 		0, 
@@ -258,7 +307,7 @@ InitWindowComponents(HWND MainWindow, wnd_ctrls *Controls)
 
 	ButtonOK = CreateWindowA(
 		WC_BUTTONA,
-		"Set to fullscreen",
+		"Adjust window",
 		WS_TABSTOP | WS_CHILD | WS_OVERLAPPED | BS_DEFPUSHBUTTON,
 		0, 0,
 		CW_USEDEFAULT, CW_USEDEFAULT,
@@ -267,10 +316,22 @@ InitWindowComponents(HWND MainWindow, wnd_ctrls *Controls)
 		Module, 
 		0);
 
+	CheckBox = CreateWindowA(
+		WC_BUTTONA,
+		"Load config",
+		WS_CHILD | BS_AUTOCHECKBOX,
+		0, 0,
+		CW_USEDEFAULT, CW_USEDEFAULT,
+		MainWindow,
+		0,
+		Module,
+		0);
+
 	Controls->ComboBox = ComboBox;
 	Controls->StaticText = TextBox;
 	Controls->ButtonOK = ButtonOK;
 	Controls->ButtonCancel = ButtonCancel;
+	Controls->CheckBox = CheckBox;
 	Controls->CurSelection = 0;
 
 	ApplySystemParameters(Controls);
@@ -333,6 +394,88 @@ DrawGradient(HDC hDC, RECT Region, COLORREF TopLeft, COLORREF TopRight, COLORREF
     GradientFill(hDC, Vertices, 4, &GradientTriangle, 2, GRADIENT_FILL_TRIANGLE);
 }
 
+static BOOL ParseSizeString(char *String, int *Width, int *Height)
+{
+	BOOL Result = FALSE;
+
+	// TODO: Is a finite state machine overkill here?
+	int ResultWidth;
+	int ResultHeight;
+	int Digit = 0;
+	int Number = 0;
+	BOOL FoundColon = FALSE;
+	BOOL AbortParsing = FALSE;
+	for(char *At = String; *At; At++) {
+		char C = *At;
+		switch(C) {
+			case ':':
+				ResultWidth = Number;
+				Number = 0;
+				FoundColon = TRUE;
+				break;
+			case '0': case '1':	case '2':
+			case '3': case '4':	case '5':
+			case '6': case '7':	case '8':
+			case '9':
+				Digit = C - '0';
+				Number = 10 * Number + Digit;
+				break;
+			case ' ': case '\r': case '\n': case '\t':
+				break;
+			default:
+				// NOTE: Invalid character
+				AbortParsing = TRUE;
+		}
+
+		if(AbortParsing)
+			break;
+	}
+
+	if(FoundColon && !AbortParsing) {
+		ResultHeight = Number;
+		Result = TRUE;
+	}
+
+	*Width = ResultWidth;
+	*Height = ResultHeight;
+
+	return Result;
+}
+
+struct load_file_result
+{
+	int Width;
+	int Height;
+	BOOL Valid;
+};
+
+static load_file_result
+LoadWindowSizeFromConfig()
+{
+	load_file_result Result = {};
+
+	HANDLE File = CreateFileA("config.ini", GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+	if(File != INVALID_HANDLE_VALUE) {
+		char Buffer[256];
+		DWORD BytesRead;
+		if(ReadFile(File, Buffer, sizeof(Buffer), &BytesRead, 0)) {
+			if(BytesRead < sizeof(Buffer) - 1) {
+				Buffer[BytesRead] = 0;
+
+				int Width, Height;
+				if(ParseSizeString(Buffer, &Width, &Height)) {
+					Result.Width = Width;
+					Result.Height = Height;
+					Result.Valid = TRUE;
+				}
+			}
+		}
+		CloseHandle(File);
+	}
+
+	return Result;
+}
+
 static LRESULT CALLBACK 
 MainWindowProc(HWND MainWindow, UINT Message, WPARAM wParam, LPARAM lParam)
 {
@@ -390,12 +533,30 @@ MainWindowProc(HWND MainWindow, UINT Message, WPARAM wParam, LPARAM lParam)
 			else if(HIWORD(wParam) == BN_CLICKED) {
 				if(Ctrl == Controls.ButtonOK) {
 					if(Controls.CurSelection) {
-						SetFullscreen(*Controls.CurSelection);
+						int UseConfig = SendMessageA(Controls.CheckBox, BM_GETCHECK, 0, 0);
+						if(UseConfig == BST_CHECKED) {
+							load_file_result LoadResult = LoadWindowSizeFromConfig();
+							if(LoadResult.Valid) {
+								SetWindowMode(*Controls.CurSelection, LoadResult.Width, LoadResult.Height);
+							}
+							else {
+								int SetToFullscreen = MessageBoxA(MainWindow, "Error loading config.ini.\nSet to fullscreen instead?", 0, MB_YESNO | MB_TASKMODAL);
+								if(SetToFullscreen == IDYES) {
+									SetFullscreen(*Controls.CurSelection);
+								}
+							}
+						}
+						else {
+							SetFullscreen(*Controls.CurSelection);
+						}
 					}
 					PostQuitMessage(0);
 				}
 				else if(Ctrl == Controls.ButtonCancel) {
 					PostQuitMessage(0);
+				}
+				else {
+					Result = DefWindowProcA(MainWindow, Message, wParam, lParam);
 				}
 			}
 		} break;
