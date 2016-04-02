@@ -90,7 +90,7 @@ SetBorderlessWindowStyle(window_data Data)
 	DWORD Style = Data.Style;
 	LONG_PTR ExStyle = GetWindowLongPtrA(Window, GWL_EXSTYLE);
 	if(ExStyle) {
-		SetWindowLong(Window, GWL_STYLE, Style & ~(WS_CAPTION | WS_THICKFRAME));
+		SetWindowLong(Window, GWL_STYLE, Style & ~(WS_CAPTION | WS_THICKFRAME | WS_BORDER | WS_DLGFRAME | WS_SYSMENU));
 		SetWindowLong(Window, GWL_EXSTYLE, ExStyle & ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
 	}
 	else {
