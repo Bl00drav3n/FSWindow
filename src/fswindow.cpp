@@ -50,6 +50,8 @@ struct wnd_ctrls
 	HWND ButtonOK;
 	HWND ButtonCancel;
 	HWND CheckBox;
+    HWND CheckBoxTopmost;
+    HWND CheckBoxBorderless;
 
 	window_data_pool Pool;
 	window_data *CurSelection;
@@ -99,6 +101,13 @@ SetBorderlessWindowStyle(window_data Data)
 }
 
 static void
+SetTopmost(window_data Data)
+{
+    HWND Window = Data.Window;
+    SetWindowPos(Window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+}
+
+static void
 SetWindowDimensions(window_data Data, int UpperLeftX, int UpperLeftY, int Width, int Height)
 {
 	UINT Flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED;
@@ -108,7 +117,7 @@ SetWindowDimensions(window_data Data, int UpperLeftX, int UpperLeftY, int Width,
 }
 
 static void
-SetWindowMode(window_data Data, int Width, int Height)
+SetWindowMode(window_data Data, int Width, int Height, int topmost, int borderless)
 {
 	MONITORINFO MonitorInfo = {};
 	MonitorInfo.cbSize = sizeof(MonitorInfo);
@@ -130,11 +139,14 @@ SetWindowMode(window_data Data, int Width, int Height)
 		PRINT_ERR("Could not get monitor info.\n");
 	}
 
-	SetBorderlessWindowStyle(Data);
+    if (borderless == BST_CHECKED)
+        SetBorderlessWindowStyle(Data);
+    if (topmost == BST_CHECKED)
+        SetTopmost(Data);
 }
 
 static void
-SetFullscreen(window_data Data)
+SetFullscreen(window_data Data, int topmost, int borderless)
 {
 	MONITORINFO MonitorInfo = {};
 	MonitorInfo.cbSize = sizeof(MonitorInfo);
@@ -150,7 +162,10 @@ SetFullscreen(window_data Data)
 		PRINT_ERR("Could not get monitor info.\n");
 	}
 
-	SetBorderlessWindowStyle(Data);
+    if (borderless == BST_CHECKED)
+        SetBorderlessWindowStyle(Data);
+    if (topmost == BST_CHECKED)
+        SetTopmost(Data);
 }
 
 static BOOL CALLBACK 
@@ -208,6 +223,8 @@ ApplySystemParameters(wnd_ctrls *Controls)
 		SendMessageA(Controls->ComboBox, WM_SETFONT, (WPARAM)Font, 0);
 		SendMessageA(Controls->StaticText, WM_SETFONT, (WPARAM)Font, 0);
 		SendMessageA(Controls->CheckBox, WM_SETFONT, (WPARAM)Font, 0);
+        SendMessageA(Controls->CheckBoxTopmost, WM_SETFONT, (WPARAM)Font, 0);
+        SendMessageA(Controls->CheckBoxBorderless, WM_SETFONT, (WPARAM)Font, 0);
 	}
 }
 
@@ -252,17 +269,20 @@ ApplyGridLayout(wnd_ctrls *Controls, int WindowWidth, int WindowHeight, int Marg
 		int TextBoxWidth = (int)(WindowWidth - 2 * MarginX);
 		int TextBoxHeight = (int)(GridSpacingY - 2 * MarginY);
 		int TextY = (int)(GridSpacingY + MarginY);
-		SetWindowPos(Controls->StaticText, 0, MarginX, TextY, TextBoxWidth, TextBoxHeight, SetPosFlags);
+		SetWindowPos(Controls->StaticText, 0, (int)(GridSpacingX), TextY, TextBoxWidth-80, TextBoxHeight, SetPosFlags);
 
 		int ButtonWidth = (int)(GridSpacingX - 2 * MarginX);
 		int ButtonHeight = (int)(GridSpacingY - 2 * MarginY);
 		int ButtonOffsetX = MarginX;
+        int ButtonOffsetY = MarginY;
 		int ButtonY = (int)(2 * GridSpacingY + MarginY);
-		SetWindowPos(Controls->ButtonOK, 0, ButtonOffsetX, ButtonY, ButtonWidth, ButtonHeight, SetPosFlags);
-		SetWindowPos(Controls->ButtonCancel, 0, (int)(GridSpacingX + ButtonOffsetX), ButtonY, ButtonWidth, ButtonHeight, SetPosFlags);
+		SetWindowPos(Controls->ButtonOK, 0, ButtonOffsetX, ((int)GridSpacingY + ButtonOffsetY), ButtonWidth, ButtonHeight, SetPosFlags);
+		SetWindowPos(Controls->ButtonCancel, 0, ButtonOffsetX, ButtonY, ButtonWidth, ButtonHeight, SetPosFlags);
 
 		// TODO: This is pure hackery.
-		SetWindowPos(Controls->CheckBox, 0, (int)(2 * GridSpacingX + ButtonOffsetX), ButtonY, ButtonWidth, ButtonHeight, SetPosFlags);
+		SetWindowPos(Controls->CheckBox, 0, (int)(GridSpacingX + ButtonOffsetX) - 20, ButtonY - 20, ButtonWidth + 20, ButtonHeight, SetPosFlags);
+        SetWindowPos(Controls->CheckBoxTopmost, 0, (int)(GridSpacingX + ButtonOffsetX) - 20, ButtonY + 10, ButtonWidth + 20, ButtonHeight, SetPosFlags);
+        SetWindowPos(Controls->CheckBoxBorderless, 0, (int)(2 * GridSpacingX + ButtonOffsetX), ButtonY - 20 , ButtonWidth + 20, ButtonHeight, SetPosFlags);
 	}
 }
 
@@ -271,7 +291,7 @@ InitWindowComponents(HWND MainWindow, wnd_ctrls *Controls)
 {
 	HINSTANCE Module = GetModuleHandle(0);
 
-	HWND ComboBox, TextBox, ButtonOK, ButtonCancel, CheckBox;
+	HWND ComboBox, TextBox, ButtonOK, ButtonCancel, CheckBox, CheckBoxTopmost, CheckBoxBorderless;
 	ComboBox = CreateWindowA(
 		WC_COMBOBOXA, 
 		0, 
@@ -327,11 +347,35 @@ InitWindowComponents(HWND MainWindow, wnd_ctrls *Controls)
 		Module,
 		0);
 
+    CheckBoxTopmost = CreateWindowA(
+        WC_BUTTONA,
+        "Make Topmost",
+        WS_CHILD | BS_AUTOCHECKBOX,
+        0, 0,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        MainWindow,
+        0,
+        Module,
+        0);
+
+    CheckBoxBorderless = CreateWindowA(
+        WC_BUTTONA,
+        "Set Borderless",
+        WS_CHILD | BS_AUTOCHECKBOX,
+        0, 0,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        MainWindow,
+        0,
+        Module,
+        0);
+
 	Controls->ComboBox = ComboBox;
 	Controls->StaticText = TextBox;
 	Controls->ButtonOK = ButtonOK;
 	Controls->ButtonCancel = ButtonCancel;
 	Controls->CheckBox = CheckBox;
+    Controls->CheckBoxTopmost = CheckBoxTopmost;
+    Controls->CheckBoxBorderless = CheckBoxBorderless;
 	Controls->CurSelection = 0;
 
 	ApplySystemParameters(Controls);
@@ -534,20 +578,22 @@ MainWindowProc(HWND MainWindow, UINT Message, WPARAM wParam, LPARAM lParam)
 				if(Ctrl == Controls.ButtonOK) {
 					if(Controls.CurSelection) {
 						int UseConfig = SendMessageA(Controls.CheckBox, BM_GETCHECK, 0, 0);
+                        int UseTopmost = SendMessageA(Controls.CheckBoxTopmost, BM_GETCHECK, 0, 0);
+                        int UseBorderless = SendMessageA(Controls.CheckBoxBorderless, BM_GETCHECK, 0, 0);
 						if(UseConfig == BST_CHECKED) {
 							load_file_result LoadResult = LoadWindowSizeFromConfig();
 							if(LoadResult.Valid) {
-								SetWindowMode(*Controls.CurSelection, LoadResult.Width, LoadResult.Height);
+								SetWindowMode(*Controls.CurSelection, LoadResult.Width, LoadResult.Height, UseTopmost, UseBorderless);
 							}
 							else {
 								int SetToFullscreen = MessageBoxA(MainWindow, "Error loading config.ini.\nSet to fullscreen instead?", 0, MB_YESNO | MB_TASKMODAL);
 								if(SetToFullscreen == IDYES) {
-									SetFullscreen(*Controls.CurSelection);
+									SetFullscreen(*Controls.CurSelection, UseTopmost, UseBorderless);
 								}
 							}
 						}
 						else {
-							SetFullscreen(*Controls.CurSelection);
+							SetFullscreen(*Controls.CurSelection, UseTopmost, UseBorderless);
 						}
 					}
 					PostQuitMessage(0);
